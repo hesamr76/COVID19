@@ -7,23 +7,17 @@ from keras.models import Sequential
 from keras.layers import Dense, LSTM, Dropout, Activation
 from tensorflow.keras.callbacks import EarlyStopping
 
-country = "Italy"
+country = "Iran"
 
 # declare directories
-confirmed_dir = "dataset/confirmed.csv"
-# deaths_dir = "dataset/deaths.csv"
-# recovered_dir = "dataset/recovered.csv"
+# confirmed_dir = "dataset/confirmed.csv"
+confirmed_dir = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"
 
 # load data from csv
 confirmed_data = pd.read_csv(confirmed_dir)
-# recovered_data = pd.read_csv(recovered_dir)
-# deaths_data = pd.read_csv(deaths_dir)
-
 
 # select target country
 confirmed = confirmed_data[confirmed_data["Country/Region"] == country]
-# recovered = recovered_data[recovered_data["Country/Region"] == country]
-# deaths = deaths_data[deaths_data["Country/Region"] == country]
 
 # cumulative datas
 cumulative_confirmed = pd.DataFrame(
@@ -33,10 +27,6 @@ cumulative_confirmed = pd.DataFrame(
 cumulative_confirmed.index = pd.to_datetime(
     cumulative_confirmed.index, format="%m/%d/%y")
 cumulative_confirmed.index.name = country
-
-# cumulative = cumulative_confirmed
-# cumulative["Deaths"] = deaths[deaths.columns[4:]].sum()
-# cumulative["Recovered"] = recovered[recovered.columns[4:]].sum()
 
 # i want to predict 7 days afterwards
 goal = 7
@@ -72,7 +62,7 @@ confirmed_validation_gen = TimeseriesGenerator(
 
 # fit model with early stop
 early_stop = EarlyStopping(
-    monitor="val_loss", patience=20, restore_best_weights=True)
+    monitor="val_loss", patience=25, restore_best_weights=True)
 
 model.fit_generator(generator, validation_data=confirmed_validation_gen,
                     epochs=100, callbacks=[early_stop], steps_per_epoch=goal * 2)
@@ -115,8 +105,15 @@ print(output)
 
 def showPlot(data):
     pd.plotting.register_matplotlib_converters()
+
     plt.plot(data)
+    plt.legend(["Confirmed cases", "Predicted cases"])
+    plt.title(country)
+    plt.xlabel("Date")
+    plt.ylabel("Confirmed")
+    figure = plt.gcf()
     plt.show()
+    figure.savefig('outputs/' + country + '.jpg', dpi=100)
 
 
 showPlot(output)
