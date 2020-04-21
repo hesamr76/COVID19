@@ -7,7 +7,7 @@ from keras.models import Sequential
 from keras.layers import Dense, LSTM, Dropout, Activation
 from tensorflow.keras.callbacks import EarlyStopping
 
-country = "Iran"
+country = "Italy"
 
 # declare directories
 confirmed_dir = "dataset/confirmed.csv"
@@ -38,22 +38,23 @@ cumulative_confirmed.index.name = country
 # cumulative["Deaths"] = deaths[deaths.columns[4:]].sum()
 # cumulative["Recovered"] = recovered[recovered.columns[4:]].sum()
 
-# normalize the dataset
-scaler = MinMaxScaler()
-scaled_confirmed = scaler.fit_transform(cumulative_confirmed)
-
 # i want to predict 7 days afterwards
 goal = 7
-confirmed_train_size = len(scaled_confirmed) - goal
+confirmed_train_size = len(cumulative_confirmed) - goal
 
 # split test data from data set
-confirmed_train_data = scaled_confirmed[:confirmed_train_size]
-confirmed_test_data = scaled_confirmed[confirmed_train_size:]
-test = cumulative_confirmed[confirmed_train_size:]
+confirmed_train_data = cumulative_confirmed[:confirmed_train_size]
+confirmed_test_data = cumulative_confirmed[confirmed_train_size:]
+
+# normalize the dataset
+scaler = MinMaxScaler()
+scaler.fit(confirmed_train_data)
+scaled_confirmed_train = scaler.transform(confirmed_train_data)
+scaled_confirmed_test = scaler.transform(confirmed_test_data)
 
 # create generator
 generator = TimeseriesGenerator(
-    confirmed_train_data, confirmed_train_data, length=goal, batch_size=1)
+    scaled_confirmed_train, scaled_confirmed_train, length=goal, batch_size=1)
 
 # create model
 model = Sequential()
@@ -63,7 +64,8 @@ model.add(Dense(units=1))
 model.compile(optimizer="adam", loss="mse", metrics=["accuracy"])
 
 # create validation data
-confirmed_validation = np.append(confirmed_train_data[50], confirmed_test_data)
+confirmed_validation = np.append(
+    scaled_confirmed_train[confirmed_train_size - 1], scaled_confirmed_test)
 confirmed_validation = confirmed_validation.reshape(goal + 1, 1)
 confirmed_validation_gen = TimeseriesGenerator(
     confirmed_validation, confirmed_validation, length=goal, batch_size=1)
@@ -80,32 +82,35 @@ model.fit_generator(generator, validation_data=confirmed_validation_gen,
 model.save("model.h5")
 print("Saved model")
 
-# holding predictions
-test_prediction = []
+# declare predictions array
+scaled_predictions = []
 
-# last n points from training set
-first_eval_batch = confirmed_train_data[-goal:]
-current_batch = first_eval_batch.reshape(1, goal, 1)
+# initial batch
+init_batch = scaled_confirmed_train[-goal:]
+current_batch = init_batch.reshape(1, goal, 1)
 
+# get predictions and fill scaled_predictions
 for i in range(goal * 2):
-    current_pred = model.predict(current_batch)[0]
-    test_prediction.append(current_pred)
+    current_prediction = model.predict(current_batch)[0]
+    scaled_predictions.append(current_prediction)
     current_batch = np.append(current_batch[:, 1:, :], [
-                              [current_pred]], axis=1)
+                              [current_prediction]], axis=1)
 
-true_prediction = scaler.inverse_transform(test_prediction)
+# invert minmax scale
+predictions = scaler.inverse_transform(scaled_predictions)
 
-time_series_array = test.index
+# extend data for goal (7) next days
+time_series = confirmed_test_data.index
 for k in range(0, goal):
-    time_series_array = time_series_array.append(
-        time_series_array[-1:] + pd.DateOffset(1))
+    time_series = time_series.append(
+        time_series[-1:] + pd.DateOffset(1))
 
-df_forecast = pd.DataFrame(
-    columns=["Confirmed", "Confirmed Predicted"], index=time_series_array)
-df_forecast.loc[:, "Confirmed Predicted"] = true_prediction[:, 0]
-df_forecast.loc[:, "Confirmed"] = test["Confirmed"]
+output = pd.DataFrame(
+    columns=["Confirmed", "Predicted"], index=time_series)
+output["Predicted"] = predictions
+output["Confirmed"] = confirmed_test_data["Confirmed"]
 
-print(df_forecast)
+print(output)
 
 
 def showPlot(data):
@@ -114,6 +119,4 @@ def showPlot(data):
     plt.show()
 
 
-showPlot(df_forecast)
-
-# showPlot(confirmed_test_data)
+showPlot(output)
